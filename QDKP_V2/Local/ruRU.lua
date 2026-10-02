@@ -211,6 +211,7 @@ if GetLocale()=='ruRU' then
   QDKP2_LOC_GUINOONGOINGSESS = "Нет активной сессии"
   QDKP2_LOC_GUIROSTER = "Персонажи"
   QDKP2_LOC_GUIRAIDLOG = "Журнал рейда"
+  QDKP2_LOC_GUIITEMUSAGE = "Предметы"
   QDKP2_LOC_GUISTARTSESS = "Начать сессию"
   QDKP2_LOC_GUISTARTSESSDESC = "Открывает новую сессию, активируя\nсекцию управления рейдомn.\nЧтобы начать новую сессию,\nВы должны быть в группе или рейде."
   QDKP2_LOC_GUICLOSESESS = "Закрыть сессию"

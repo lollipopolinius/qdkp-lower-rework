@@ -413,6 +413,28 @@
         </Scripts>
       </Button>
 
+      <Button name="QDKP2frame1_items" inherits="UIPanelButtonTemplate" text="QDKP2_LOC_GUIITEMUSAGE" id="15">
+         <Size>
+          <AbsDimension x="85" y="25"/>
+        </Size>
+        <Anchors>
+          <Anchor relativePoint="TOP" point="CENTER" >
+            <Offset>
+              <AbsDimension x="-125" y="-55"/>
+            </Offset>
+          </Anchor>
+        </Anchors>
+        <Scripts>
+          <OnClick>
+            if QDKP2IU_Toggle then
+              QDKP2IU_Toggle()
+            else
+              QDKP2_Msg("ItemUsage GUI module not loaded.")
+            end
+          </OnClick>
+        </Scripts>
+      </Button>
+
       <Button name="QDKP2frame1_log" inherits="UIPanelButtonTemplate" text="QDKP2_LOC_GUIRAIDLOG" id="12">
          <Size>
           <AbsDimension x="100" y="25"/>
