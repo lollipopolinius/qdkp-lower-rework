@@ -128,6 +128,51 @@ PotCounterAPI.ResetAll = function(self)
 end
 
 -----------------------
+--   DKP awarding (via QDKP core API, read-only usage)
+-----------------------
+local function StripRealm(key)
+  if not key then return nil end
+  local name = strsplit("-", key, 2)
+  return name
+end
+
+local function AwardPlayer(key, amount, reason)
+  local base = StripRealm(key)
+  if not base then return false, "no name" end
+  -- Resolve through the raid roster first (gives the plain guild name).
+  local num = (GetNumGroupMembers and GetNumGroupMembers()) or (GetNumRaidMembers and GetNumRaidMembers()) or 0
+  for i = 1, num do
+    local unit = "raid" .. i
+    if UnitExists(unit) then
+      local un = UnitName(unit)
+      if un and NormalizeName(un) == key then base = un; break end
+    end
+  end
+  if type(QDKP2_AddTotals) ~= "function" then
+    return false, "QDKP core not loaded"
+  end
+  local ok, err = pcall(QDKP2_AddTotals, base, amount, nil, nil, reason)
+  if not ok then return false, tostring(err) end
+  return true, base
+end
+
+-- Award a fixed DKP amount to every currently selected player.
+-- Returns awardedCount, skippedList({key=reason}).
+PotCounterAPI.AwardSelected = function(self, amount, keys)
+  local count, skipped = 0, {}
+  if type(amount) ~= "number" or amount <= 0 then return 0, skipped end
+  for _, key in ipairs(keys or {}) do
+    local ok, info = AwardPlayer(key, amount, "Potions")
+    if ok then
+      count = count + 1
+    else
+      skipped[key] = info
+    end
+  end
+  return count, skipped
+end
+
+-----------------------
 --   Combat log handling
 -----------------------
 -- WoW Classic (3.3.5) COMBAT_LOG_EVENT_UNFILTERED argument layout for
@@ -324,7 +369,7 @@ local function CreateMainWindow()
   totals:SetText("")
 
   -- Header row
-  local colNames = { {"Player", 220}, {"Haste (53908)", 90}, {"Crit (53909)", 90} }
+  local colNames = { {"Player", 190}, {"Haste (53908)", 75}, {"Crit (53909)", 75}, {"Total", 60} }
   local headerY = -70
   local xoff = 0
   for i, col in ipairs(colNames) do
@@ -337,25 +382,56 @@ local function CreateMainWindow()
   -- Scrollable list
   local scroll = CreateFrame("ScrollFrame", "PotCounterScroll", f, "UIPanelScrollFrameTemplate")
   scroll:SetPoint("TOPLEFT", 16, headerY - 18)
-  scroll:SetPoint("BOTTOMRIGHT", -36, 60)
+  scroll:SetPoint("BOTTOMRIGHT", -36, 92)
 
   local content = CreateFrame("Frame", nil, scroll)
   content:SetWidth(FRAME_W - 80)
   scroll:SetScrollChild(content)
 
+  -- Selection state: [playerKey] = true
+  f.selected = {}
+
+  local function UpdateRowSelection(row)
+    if row.selected then
+      row.highlight:Show()
+    else
+      row.highlight:Hide()
+    end
+  end
+
   f.rows = {}
   local ROW_H = 20
+  function f:GetSelectedKeys()
+    local keys = {}
+    for k in pairs(self.selected) do table.insert(keys, k) end
+    table.sort(keys)
+    return keys
+  end
+
+  function f:ClearSelection()
+    wipe(self.selected)
+    for _, row in ipairs(self.rows) do
+      if row.selected then row.selected = false; UpdateRowSelection(row) end
+    end
+  end
+
   function f:Refresh()
     local list = {}
     for k, p in pairs(db.players) do
       if (p.haste or 0) > 0 or (p.crit or 0) > 0 then
-        table.insert(list, { key = k, haste = p.haste or 0, crit = p.crit or 0 })
+        table.insert(list, { key = k, haste = p.haste or 0, crit = p.crit or 0, total = (p.haste or 0) + (p.crit or 0) })
       end
     end
     table.sort(list, function(a, b)
-      return (a.haste + a.crit) > (b.haste + b.crit) or
-             (a.haste + a.crit) == (b.haste + b.crit) and a.key < b.key
+      return a.total > b.total or a.total == b.total and a.key < b.key
     end)
+
+    -- Drop selections of players that are no longer listed.
+    local present = {}
+    for _, e in ipairs(list) do present[e.key] = true end
+    for k in pairs(self.selected) do
+      if not present[k] then self.selected[k] = nil end
+    end
 
     local needed = #list * ROW_H
     if needed < 1 then needed = 1 end
@@ -364,9 +440,14 @@ local function CreateMainWindow()
     for i = 1, #list do
       local row = f.rows[i]
       if not row then
-        row = CreateFrame("Frame", nil, content)
+        row = CreateFrame("Button", nil, content)
         row:SetHeight(ROW_H)
         row:SetWidth(FRAME_W - 80)
+        row:RegisterForClicks("LeftButtonUp")
+        row.highlight = row:CreateTexture(nil, "BACKGROUND")
+        row.highlight:SetAllPoints()
+        row.highlight:SetColorTexture(0.2, 0.6, 1.0, 0.25)
+        row.highlight:Hide()
         row.cells = {}
         local xo = 0
         for ci, col in ipairs(colNames) do
@@ -377,13 +458,39 @@ local function CreateMainWindow()
           row.cells[ci] = c
           xo = xo + col[2]
         end
+        row:SetScript("OnClick", function(self, button)
+          if IsModifiedClick("CTRL") or IsControlKeyDown() then
+            -- Ctrl+click toggles membership in the selection set.
+            if self.key then
+              if f.selected[self.key] then
+                f.selected[self.key] = nil
+                self.selected = false
+              else
+                f.selected[self.key] = true
+                self.selected = true
+              end
+            end
+          else
+            -- Plain click selects only this row.
+            f:ClearSelection()
+            if self.key then
+              f.selected[self.key] = true
+              self.selected = true
+            end
+          end
+          UpdateRowSelection(self)
+        end)
         f.rows[i] = row
       end
       row:ClearAllPoints()
       row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -(i - 1) * ROW_H)
+      row.key = list[i].key
       row.cells[1]:SetText(list[i].key)
       row.cells[2]:SetText(list[i].haste)
       row.cells[3]:SetText(list[i].crit)
+      row.cells[4]:SetText(list[i].total)
+      row.selected = f.selected[list[i].key] or false
+      UpdateRowSelection(row)
       row:Show()
     end
     for i = #list + 1, #f.rows do
@@ -393,6 +500,47 @@ local function CreateMainWindow()
     local h, c, pl = PotCounter:GetTotals()
     totals:SetText(format("Total: %d haste | %d crit | players with potions: %d", h, c, pl))
   end
+
+  ---------------- DKP award panel ----------------
+  local editDKP = CreateFrame("EditBox", "PotCounterAwardInput", f, "InputBoxTemplate")
+  editDKP:SetSize(60, 20)
+  editDKP:SetPoint("BOTTOMLEFT", 20, 52)
+  editDKP:SetAutoFocus(false)
+  editDKP:SetNumeric(true)
+  editDKP:SetText("")
+
+  local lblDKP = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  lblDKP:SetPoint("BOTTOMLEFT", editDKP, "TOPLEFT", 0, 4)
+  lblDKP:SetText("DKP за зелье")
+
+  local btnAward = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  btnAward:SetSize(170, 22)
+  btnAward:SetPoint("BOTTOMLEFT", editDKP, "BOTTOMRIGHT", 8, 0)
+  btnAward:SetText("Начислить DKP выбранным")
+  btnAward:SetScript("OnClick", function()
+    local amount = tonumber(editDKP:GetText())
+    if not amount or amount <= 0 then
+      print("|cffff5555[PotCounter]|r Введите количество DKP (больше 0).")
+      return
+    end
+    local keys = f:GetSelectedKeys()
+    if #keys == 0 then
+      print("|cffff5555[PotCounter]|r Никто не выбран. Выделите игроков кликом или Ctrl+кликом.")
+      return
+    end
+    local reason = format("Potions (%.2f DKP each)", amount)
+    local count, skipped = PotCounter:AwardSelected(amount, keys)
+    if count > 0 then
+      print(format("|cff33ff99[PotCounter]|r Начислено %.2f DKP: %d игрокам.", amount, count))
+    end
+    for k, why in pairs(skipped) do
+      print(format("|cffff5555[PotCounter]|r %s: пропущен (%s).", k, tostring(why)))
+    end
+  end)
+
+  local lblSelHint = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  lblSelHint:SetPoint("BOTTOMLEFT", btnAward, "BOTTOMRIGHT", 10, 2)
+  lblSelHint:SetText("Клик — выбрать, Ctrl+клик — добавить/убрать из выделения")
 
   -- Buttons
   local btnReset = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
@@ -461,15 +609,22 @@ local function EnableModule()
   end
 end
 
+-- Compatibility with the real AceAddon-3.0 lifecycle: some library versions
+-- enable addons automatically (OnEnable without OnInitialize), others don't.
+-- Make initialization idempotent so either flow works.
+local function EnsureInitialized()
+  if not db then StartModule(PotCounter or _G[MODNAME] or {}); InitDB() end
+end
+
 if LibStub and LibStub("AceAddon-3.0", true) then
   -- Preferred path: run as an AceAddon object (libs bundled in QDKP2_Config).
   local PotCounterAce = LibStub("AceAddon-3.0"):NewAddon(MODNAME)
-  PotCounterAce.Name = MODNAME
   function PotCounterAce:OnInitialize()
     StartModule(PotCounterAce)
     InitDB()
   end
   function PotCounterAce:OnEnable()
+    EnsureInitialized()
     EnableModule()
   end
 else
