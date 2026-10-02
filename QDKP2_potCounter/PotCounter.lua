@@ -504,3 +504,52 @@ if SlashCmdHandler then
   SlashCmdHandler[SLASH_POTCOUNTER1] = function(msg) SlashHandler(msg) end
   SlashCmdHandler[SLASH_POTCOUNTER2] = function(msg) SlashHandler(msg) end
 end
+
+-----------------------------------------------------------------------
+-- Button in the QDKP main window (next to "Roster"/"Raid Log").
+-- Created from code so all PotCounter changes stay inside this folder.
+-----------------------------------------------------------------------
+local POTC_BTN_TEXT_RU = "Зелья"
+
+local function AddToQDKPMainWindow()
+  if not PotCounter or PotCounter.btnPlaced then return end
+  local anchor -- existing QDKP roster button, our anchor point
+  for _, nm in ipairs({ "QDKP2frame1_list", "QDKP2_Frame1_list" }) do
+    if _G[nm] then anchor = _G[nm]; break end
+  end
+  if not anchor then
+    for _, f in ipairs({ GetFramesByTypeName and { GetFramesByTypeName("Button") } or {} }) do
+      if f and f.GetName and (f:GetName() == "QDKP2frame1_list") then anchor = f; break end
+    end
+  end
+  if not anchor then return end
+
+  local btn = CreateFrame("Button", "QDKP2frame1_potc", anchor:GetParent(), "UIPanelButtonTemplate")
+  btn:SetSize(85, 25)
+  btn:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 6, 0)
+  btn:SetText((GetLocale and GetLocale() == "ruRU") and POTC_BTN_TEXT_RU or "Potions")
+  btn:SetScript("OnClick", function()
+    if PotCounter.frame then PotCounter.frame:Toggle() end
+  end)
+  btn:Show()
+  PotCounter.button = btn
+  PotCounter.btnPlaced = true
+end
+
+local function TryPlaceButton()
+  if PotCounter and PotCounter.btnPlaced then return end
+  if PotCounter then AddToQDKPMainWindow() end
+end
+
+-- Retry until the QDKP main frame exists (it may load after us).
+local placeTimer = CreateFrame("Frame", MODNAME .. "BtnPlacer", UIParent)
+placeTimer:SetScript("OnUpdate", function(self, el)
+  self.t = (self.t or 0) + el
+  if self.t >= 1 then
+    self.t = 0
+    TryPlaceButton()
+    if PotCounter and PotCounter.btnPlaced then self:SetScript("OnUpdate", nil) end
+  end
+end)
+placeTimer:RegisterEvent("PLAYER_ENTERING_WORLD")
+placeTimer:SetScript("OnEvent", function() TryPlaceButton() end)
