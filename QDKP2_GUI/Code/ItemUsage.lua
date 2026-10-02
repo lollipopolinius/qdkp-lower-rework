@@ -1,11 +1,11 @@
 -- This file is a part of QDKP_V2 (see about.txt in the core addon's root folder)
 
 --             ## GUI MODULE ##
---        ItemUsage page (tracked items usage counters & DKP awarding)
+--        ItemUsage page (tracked auras application counters & DKP awarding)
 --
 -- A separate window that shows how many times each character present in the raid
--- has used the tracked items (default itemIDs: 40211 and 40212), and lets officers
--- award DKP for those uses.
+-- has applied the tracked auras (default auraIDs: 53908 and 53909, cast by items
+-- 40211/40212), and lets officers award DKP for those applications.
 -- Open it with /qdkp2 items, or from the QDKP main menu button "Item Usage".
 
 local QDKP2IU_FRAME_NAME = "QDKP2IU_Frame"
@@ -221,7 +221,7 @@ local function CreateFrameWindow()
     if i > 1 then idstr = idstr .. ", "; end
     idstr = idstr .. tostring(ids[i])
   end
-  itemsLine:SetText("ItemIDs: " .. idstr)
+  itemsLine:SetText(Loc("AuraIDs") .. ": " .. idstr)
 
   -- Columns header
   local colY = itemsLine

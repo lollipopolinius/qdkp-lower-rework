@@ -102,11 +102,17 @@ function QDKP2_ReadDatabase(GuildName)
 
   GuildData.BidM = GuildData.BidM or {}
 
-  -- ItemUsage module (tracked items usage counters: default itemIDs 40211, 40212)
-  if not GuildData.TrackedItems then
-    GuildData.TrackedItems = {}
-    for i = 1, #QDKP2IU_DEFAULT_ITEMS do
-      table.insert(GuildData.TrackedItems, QDKP2IU_DEFAULT_ITEMS[i])
+  -- ItemUsage module (tracked auras application counters: default auraIDs 53908, 53909)
+  if not GuildData.TrackedItems or (GuildData.TrackedItems[1] ~= 53908 and GuildData.TrackedItems[1] ~= 40211) then
+    local keep = false
+    for i = 1, #(GuildData.TrackedItems or {}) do
+      if GuildData.TrackedItems[i] == 53908 or GuildData.TrackedItems[i] == 53909 then keep = true; end
+    end
+    if not keep then
+      GuildData.TrackedItems = {}
+      for i = 1, #QDKP2IU_DEFAULT_AURAS do
+        table.insert(GuildData.TrackedItems, QDKP2IU_DEFAULT_AURAS[i])
+      end
     end
   end
   GuildData.ItemUses = GuildData.ItemUses or {}

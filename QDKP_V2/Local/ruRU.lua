@@ -316,21 +316,22 @@ if GetLocale()=='ruRU' then
   QDKP2_LOC_GUISETQMODAMOUNT = "Установить DKP для быстрого редактирования..."
   QDKP2_LOC_GUISETQMODAMOUNTDESC = "Введите кол-во DKP, используемое\nв меню быстрого редактирования."
 
-  -- ItemUsage module (counters of tracked items usage: 40211 / 40212)
+  -- ItemUsage module (tracked auras application counters: 53908 / 53909)
   QDKP2IU_LOC = {
-    Header      = "Использование отслеживаемых предметов",
-    NoData      = "Отслеживаемые предметы ещё никто не применял.",
+    Header      = "Наложение отслеживаемых аур",
+    AuraIDs     = "ID аур",
+    NoData      = "Отслеживаемые ауры ещё никто не накладывал.",
     Player      = "Игрок",
-    Uses        = "Применено",
+    Uses        = "Наложено",
     Awarded     = "Начислено DKP",
-    Total       = "Всего применений",
-    PerUse      = "DKP за применение",
+    Total       = "Всего наложений",
+    PerUse      = "DKP за наложение",
     AwardAll    = "Начислить всем",
     AwardPlayer = "Начислить",
     Reset       = "Сбросить счётчики",
     NotOfficer  = "Для начисления DKP нужны права офицера.",
-    NothingPay  = "Нет неотначисленных DKP за применённые предметы.",
-    AwardedMsg  = "$NAME получил(а) $DKP DKP за $N применений отслеживаемых предметов.",
-    Registered  = "$NAME применил(а) отслеживаемый предмет ($ITEM)",
+    NothingPay  = "Нет неотначисленных DKP за наложения аур.",
+    AwardedMsg  = "$NAME получил(а) $DKP DKP за $N наложений отслеживаемых аур.",
+    Registered  = "$NAME: наложена отслеживаемая аура $ITEM",
   }
 end

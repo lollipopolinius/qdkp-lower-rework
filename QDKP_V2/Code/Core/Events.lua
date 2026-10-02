@@ -63,6 +63,10 @@ function QDKP2_OnEvent(self, event, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
         QDKP2_Debug(2,"Core","SlainDetector triggers a boss kill:"..boss)
         QDKP2_BossKilled(boss)
       end
+    elseif arg2=="SPELL_AURA_APPLIED" or arg2=="SPELL_AURA_REFRESH" then   --ItemUsage module: tracked auras (53908/53909) applications
+      if QDKP2IU_OnCombatLog then
+        QDKP2IU_OnCombatLog(arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+      end
     end
     return
   end

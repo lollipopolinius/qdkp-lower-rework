@@ -130,7 +130,7 @@ function QDKP2_CLI_ProcessCommand(text)
     return
 
   elseif W1 == "items" or W1 == "itemusage" or W1 == "uses" then
-    -- ItemUsage module page (tracked items 40211/40212 counters & DKP awarding)
+    -- ItemUsage module page (tracked auras 53908/53909 applications counters & DKP awarding)
     if not QDKP2IU_Toggle then QDKP2_NeedGUI(); return; end
     if W2 and tonumber(W2) then
       -- "/dkp items award <dkp per use>" awards directly from the command line
