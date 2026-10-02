@@ -130,29 +130,139 @@ end
 -----------------------
 --   Combat log handling
 -----------------------
--- Classic (3.3.5) COMBAT_LOG_EVENT_UNFILTERED argument layout:
--- 1 subevent, 2 hideCaster, 3 srcFlag, 4 srcGUID, 5 srcName,
--- 6 srcRlv, 7 dstFlag, 8 dstGUID, 9 dstName, 10 dstRlv,
--- 11 spellID, 12 spellName, 13 spellSchool, [14 auraType for *_AURA_*]
-local function GetCLEArgs(...)
-  -- Modern clients (and some private-server cores): read args from API.
-  if CombatLogGetCurrentEventInfo then
-    local ok, a1 = pcall(CombatLogGetCurrentEventInfo)
-    if ok and type(a1) == "string" then
-      return CombatLogGetCurrentEventInfo()
-    end
-  end
-  -- Classic 3.3.5: args are passed directly to the event handler.
-  return ...
+-- WoW Classic (3.3.5) COMBAT_LOG_EVENT_UNFILTERED argument layout for
+-- SPELL_AURA_APPLIED / SPELL_AURA_REFRESH (as reported by the server core):
+--   1  subevent
+--   2  srcGUID
+--   3  srcName
+--   4  srcFlag
+--   5  dstGUID
+--   6  dstName
+--   7  dstFlag
+--   8  spellID
+--   9  spellName
+--   10 spellSchool
+--   11 type ("BUFF" or "DEBUFF")
+-- Some other builds/clients expose the same data via
+-- CombatLogGetCurrentEventInfo() with the retail layout:
+--   1 subevent, 2 hideCaster, 3 srcGUID, 4 srcName, 5 srcFlags,
+--   6 dstGUID, 7 dstName, 8 dstFlags, 9 spellID, 10 spellName, 11 spellSchool, [12 auraType]
+-- Both layouts are auto-detected (by checking which index holds the numeric
+-- spellID) and normalized into one table so the counter works on either client.
+local function IsSubevent(s)
+  return type(s) == "string" and s:find("^SPELL_") ~= nil
 end
 
-local function OnCombatLog(...)
-  local ok, err = pcall(function(...)
-    local subevent, _, _, _, _, _, _, _, destGUID, destName, spellID = GetCLEArgs(...)
+local IsPlayerGUID = function(guid)
+  if type(guid) ~= "string" then return false end
+  -- Accept any GUID that contains a hex player low/high part; different
+  -- cores use slightly different prefixes (Player-..., 0x0000000...).
+  return guid:find("Player") ~= nil or guid:find("^0x") ~= nil
+end
+
+-- Returns normalized event table or nil. Layouts are distinguished by the
+-- type pattern of the arguments around the spellID slot (the only reliably
+-- numeric field in every variant).
+local function MatchCompactClassic(args, subevent)
+  -- 1 subevent, 2 srcGUID, 3 srcName, 4 srcFlag,
+  -- 5 dstGUID, 6 dstName, 7 dstFlag, 8 spellID(number),
+  -- 9 spellName(string), 10 spellSchool, 11 type ("BUFF"/"DEBUFF")
+  if IsPlayerGUID(args[2]) and IsPlayerGUID(args[5])
+     and type(args[8]) == "number" then
+    return { subevent = subevent, destGUID = args[5], destName = args[6], spellID = args[8] }
+  end
+end
+
+local function MatchFullVarargs(args, subevent)
+  -- 1 subevent, 2 hideCaster(boolean), 3 srcUnitID, 4 srcGUID, 5 srcName,
+  -- 6 srcFlags, 7 srcRaidFlags, 8 dstUnitID, 9 dstGUID, 10 dstName,
+  -- 11 dstFlags, 12 dstRaidFlags, 13 spellID(number), 14 spellName(string), ...
+  -- Some cores omit the raid-flag columns, so spellID sits at 11 instead.
+  if type(args[2]) ~= "string" and IsPlayerGUID(args[4])
+     and IsPlayerGUID(args[9]) then
+    if type(args[13]) == "number" then
+      return { subevent = subevent, destGUID = args[9], destName = args[10], spellID = args[13] }
+    elseif type(args[11]) == "number" then
+      return { subevent = subevent, destGUID = args[9], destName = args[10], spellID = args[11] }
+    end
+  end
+end
+
+local function MatchRetail(args, subevent)
+  -- CombatLogGetCurrentEventInfo retail: 1 subevent, 2 hideCaster,
+  -- 3 srcGUID, 4 srcName, 5 srcFlags, 6 dstGUID, 7 dstName, 8 dstFlags,
+  -- 9 spellID(number), 10 spellName(string), 11 school, [12 auraType]
+  if IsPlayerGUID(args[3]) and IsPlayerGUID(args[6])
+     and type(args[9]) == "number" then
+    return { subevent = subevent, destGUID = args[6], destName = args[7], spellID = args[9] }
+  end
+end
+
+local function PickLayout(args)
+  if not args or #args < 8 then return nil end
+  local subevent = args[1]
+  if type(subevent) ~= "string" or not IsSubevent(subevent) then return nil end
+
+  return MatchFullVarargs(args, subevent)
+      or MatchCompactClassic(args, subevent)
+      or MatchRetail(args, subevent)
+end
+
+local function ParseCLEU(...)
+  local args = { ... }
+
+  -- Prefer the modern API when it actually returns combat log data.
+  if CombatLogGetCurrentEventInfo then
+    local ok, first = pcall(CombatLogGetCurrentEventInfo)
+    if ok and type(first) == "string" and first ~= "" and (first:match("^SWING") or first:match("^[A-Z]+_[A-Z_]+$")) then
+      local c = { CombatLogGetCurrentEventInfo() }
+      local e = PickLayout(c)
+      if e then return e end
+    end
+  end
+
+  local e = PickLayout(args)
+  if e then return e end
+
+  -- Some client builds/core wrappers deliver CLEU with a leading extra
+  -- argument before the subevent string. Try shifting by one so we still
+  -- parse correctly instead of silently dropping the event.
+  for shift = 1, 2 do
+    local shifted = {}
+    for i = 1 + shift, #args do shifted[i - shift] = args[i] end
+    e = PickLayout(shifted)
+    if e then return e end
+  end
+
+  return nil
+end
+
+-- Deduplicate identical events that some client/addon wrappers deliver twice.
+local lastEventSig = nil
+
+PotCounterAPI.OnCombatLog = function(selfOrFirst, ...)
+  -- Tolerate both plain and colon invocation: if called as
+  -- PotCounter:OnCombatLog(...) the first argument is the engine table,
+  -- which would shift every combat-log index by one. Detect a non-string
+  -- leading argument (subevent is always a string) and drop it.
+  local args = { ... }
+  if type(selfOrFirst) ~= "string" then
+    -- selfOrFirst is 'self'; varargs already hold the log payload.
+  else
+    table.insert(args, 1, selfOrFirst)
+  end
+  local ok, err = pcall(function(parsed)
+    if not parsed then return end
+    local subevent, destGUID, destName, spellID = parsed.subevent, parsed.destGUID, parsed.destName, parsed.spellID
     if type(subevent) ~= "string" then return end
     if subevent ~= "SPELL_AURA_APPLIED" and subevent ~= "SPELL_AURA_REFRESH" then return end
     if type(spellID) ~= "number" then return end
     if not TRACKED_AURAS[spellID] then return end
+
+    local now = GetTime and GetTime() or 0
+    local sig = table.concat({ subevent, tostring(spellID), tostring(destGUID), string.format("%.3f", now) }, "|")
+    if sig == lastEventSig then return end
+    lastEventSig = sig
 
     local key = ResolvePlayer(destGUID, destName)
     if not key then return end
@@ -165,15 +275,18 @@ local function OnCombatLog(...)
     else
       entry.crit = (entry.crit or 0) + 1
     end
-    entry.last = GetTime and GetTime() or time()
+    entry.last = now
 
     -- Update GUI only after the counter is safely incremented.
     if PotCounter.frame and PotCounter.frame:IsVisible() then
       PotCounter.frame:Refresh()
     end
-  end, ...)
+  end, ParseCLEU(unpack(args)))
   if not ok then
-    print("|cffff5555[PotCounter]|r event error: " .. tostring(err))
+    DEFAULT_CHAT_FRAME = DEFAULT_CHAT_FRAME or { AddMessage = function() end }
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+      DEFAULT_CHAT_FRAME:AddMessage("|cffff5555[PotCounter]|r event error: " .. tostring(err))
+    end
   end
 end
 
@@ -236,7 +349,7 @@ local function CreateMainWindow()
     local list = {}
     for k, p in pairs(db.players) do
       if (p.haste or 0) > 0 or (p.crit or 0) > 0 then
-        tinsert(list, { key = k, haste = p.haste or 0, crit = p.crit or 0 })
+        table.insert(list, { key = k, haste = p.haste or 0, crit = p.crit or 0 })
       end
     end
     table.sort(list, function(a, b)
@@ -337,9 +450,11 @@ local function EnableModule()
   if not PotCounter.listener then
     local lf = CreateFrame("Frame", MODNAME .. "Listener", UIParent)
     lf:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-    lf:SetScript("OnEvent", function(_, event, ...)
+    lf:SetScript("OnEvent", function(self, event, ...)
       if event == "COMBAT_LOG_EVENT_UNFILTERED" then
-        OnCombatLog(...)
+        -- NOTE: call as plain function; passing self would shift all
+        -- vararg indices by one and break combat log parsing.
+        PotCounterAPI.OnCombatLog(...)
       end
     end)
     PotCounter.listener = lf
@@ -385,5 +500,7 @@ end
 
 SLASH_POTCOUNTER1 = "/potc"
 SLASH_POTCOUNTER2 = "/potcounter"
-SlashCmdHandler[SLASH_POTCOUNTER1] = function(msg) SlashHandler(msg) end
-SlashCmdHandler[SLASH_POTCOUNTER2] = function(msg) SlashHandler(msg) end
+if SlashCmdHandler then
+  SlashCmdHandler[SLASH_POTCOUNTER1] = function(msg) SlashHandler(msg) end
+  SlashCmdHandler[SLASH_POTCOUNTER2] = function(msg) SlashHandler(msg) end
+end
