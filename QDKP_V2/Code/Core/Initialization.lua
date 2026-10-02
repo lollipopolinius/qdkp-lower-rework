@@ -102,6 +102,15 @@ function QDKP2_ReadDatabase(GuildName)
 
   GuildData.BidM = GuildData.BidM or {}
 
+  -- ItemUsage module (tracked items usage counters: default itemIDs 40211, 40212)
+  if not GuildData.TrackedItems then
+    GuildData.TrackedItems = {}
+    for i = 1, #QDKP2IU_DEFAULT_ITEMS do
+      table.insert(GuildData.TrackedItems, QDKP2IU_DEFAULT_ITEMS[i])
+    end
+  end
+  GuildData.ItemUses = GuildData.ItemUses or {}
+
   QDKP2log = GuildData.log
   QDKP2log["0"] = QDKP2log["0"]
 

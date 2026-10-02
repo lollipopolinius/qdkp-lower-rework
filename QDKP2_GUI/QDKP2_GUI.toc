@@ -16,6 +16,7 @@ Code\Minimap_button.lua
 Code\Misc.lua
 Code\Roster.lua
 Code\ToolBox.lua
+Code\ItemUsage.lua
 Code\Init.lua
 Code\LogEntryMod.lua
 Code\FindAdd.lua

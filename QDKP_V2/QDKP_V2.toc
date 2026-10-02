@@ -38,6 +38,7 @@ Code\Core\Check.lua
 Code\Core\Backup.lua
 Code\Core\Misc.lua
 Code\Core\Bidman.lua
+Code\Core\ItemUsage.lua
 
 Local\enGB.lua
 Local\frFR.lua

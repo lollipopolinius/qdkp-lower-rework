@@ -129,6 +129,17 @@ function QDKP2_CLI_ProcessCommand(text)
     end
     return
 
+  elseif W1 == "items" or W1 == "itemusage" or W1 == "uses" then
+    -- ItemUsage module page (tracked items 40211/40212 counters & DKP awarding)
+    if not QDKP2IU_Toggle then QDKP2_NeedGUI(); return; end
+    if W2 and tonumber(W2) then
+      -- "/dkp items award <dkp per use>" awards directly from the command line
+      QDKP2IU_AwardAll(tonumber(W2))
+    else
+      QDKP2IU_Toggle()
+    end
+    return
+
   elseif W1 == "toolbox" or W1 == "tb" then
     if not QDKP2GUI then QDKP2_NeedGUI(); end
     local W2 = QDKP2_CLI_IsLegalOnOfT(W2) or W2

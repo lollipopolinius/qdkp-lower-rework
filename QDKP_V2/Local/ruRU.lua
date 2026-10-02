@@ -314,4 +314,22 @@ if GetLocale()=='ruRU' then
   QDKP2_LOC_GUIRESETDKP = "Сбросить DKP"
   QDKP2_LOC_GUISETQMODAMOUNT = "Установить DKP для быстрого редактирования..."
   QDKP2_LOC_GUISETQMODAMOUNTDESC = "Введите кол-во DKP, используемое\nв меню быстрого редактирования."
+
+  -- ItemUsage module (counters of tracked items usage: 40211 / 40212)
+  QDKP2IU_LOC = {
+    Header      = "Использование отслеживаемых предметов",
+    NoData      = "Отслеживаемые предметы ещё никто не применял.",
+    Player      = "Игрок",
+    Uses        = "Применено",
+    Awarded     = "Начислено DKP",
+    Total       = "Всего применений",
+    PerUse      = "DKP за применение",
+    AwardAll    = "Начислить всем",
+    AwardPlayer = "Начислить",
+    Reset       = "Сбросить счётчики",
+    NotOfficer  = "Для начисления DKP нужны права офицера.",
+    NothingPay  = "Нет неотначисленных DKP за применённые предметы.",
+    AwardedMsg  = "$NAME получил(а) $DKP DKP за $N применений отслеживаемых предметов.",
+    Registered  = "$NAME применил(а) отслеживаемый предмет ($ITEM)",
+  }
 end

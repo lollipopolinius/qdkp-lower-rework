@@ -47,6 +47,11 @@ function QDKP2_OnLoot(name, item, itemQty)
     QDKP2_Events:Fire("ADD_LOOT_HISTORY", itemLink)
   end
 
+  -- ItemUsage module: count uses of tracked items (40211, 40212...) by raid members
+  if QDKP2IU_RegisterUse then
+    QDKP2IU_RegisterUse(name, item)
+  end
+
   local toLogPvt, toLogRaid
   local timestamp = QDKP2_Timestamp()
   --quality-based logging
