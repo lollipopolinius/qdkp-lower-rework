@@ -6,6 +6,9 @@
 ## DefaultState: Enabled
 ## LoadOnDemand: 0
 ## Dependencies: QDKP_V2
-## SavedVariablesPerCharacter: 
+## SavedVariables: QDKP2_potCounter_DB
+
+QDKP2_potCounter.xml
+PotCounter.lua 
 
 
