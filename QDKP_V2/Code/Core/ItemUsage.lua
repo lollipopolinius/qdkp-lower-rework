@@ -72,9 +72,13 @@ local function IsTrackedID(auraID)
 end
 
 local function AuraDisplayName(auraID)
-  local name = GetSpellName(auraID)   -- works with spellIDs on 3.x/4.x clients
+  -- GetSpellName exists only on <=4.x clients (undefined on modern ones), so the
+  -- call is guarded: an unprotected nil-call here used to abort the whole
+  -- registration routine right after the counter had been stored.
+  local name
+  if GetSpellName then name = GetSpellName(auraID) end
   if name and name ~= "" then return name; end
-  name = GetItemInfo(auraID)
+  if GetItemInfo then name = GetItemInfo(auraID) end
   if name then return name; end
   return ("Aura " .. tostring(auraID))
 end
@@ -83,36 +87,66 @@ local function Round(amount)
   return math.floor(amount * 100 + 0.5) / 100
 end
 
--- Resolves a unitId (or GUID) from the combat log into a plain player name.
--- Returns nil when the unit is not a known friendly raid/party member.
+-- Cleans a combat-log name: strips surrounding quotes and the "-Realm" suffix.
+local function StripCombatName(txt)
+  if type(txt) ~= "string" then return nil; end
+  txt = txt:gsub("\"", "")      -- strip quotes from combat log names
+  txt = txt:gsub("%-.+", "")    -- strip server part ("Name-Realm" -> "Name")
+  txt = txt:gsub("^%s+", "")
+  txt = txt:gsub("%s+$", "")
+  if txt == "" then return nil; end
+  return txt
+end
+
+-- Resolves a combat log destination (name and/or GUID) into a plain player name.
+-- Strategy:
+--   1) resolve the destGUID against raid/party/self unit tokens (most reliable:
+--      combat log names carry realm suffixes and different capitalization);
+--   2) fall back to the raw destName cleaned from quotes/realm.
+-- Returns nil when the target can't be resolved to a player.
 local function UnitNameFromCombatLog(destName, destGUID)
-  local candidate = destName
-  if type(candidate) == "string" then
-    candidate = candidate:gsub("\"", "")   -- strip quotes from combat log names
-  else
-    candidate = nil
-  end
-  if (not candidate or candidate == "") and type(destGUID) == "string" then
-    -- destName may be empty for some units; try resolving the GUID through the roster
-    for i = 1, QDKP2_GetNumRaidMembers() do
-      local unit = "raid" .. i
-      if UnitGUID and GetUnitGUID and UnitGUID(unit) == destGUID then
-        local n = GetUnitName and GetUnitName(unit)
-        if n then candidate = n; break; end
-      end
-    end
-    if not candidate and GetNumPartyMembers and GetNumPartyMembers() > 0 then
-      for i = 1, GetNumPartyMembers() do
-        local unit = "party" .. i
-        if UnitGUID and GetUnitGUID and UnitGUID(unit) == destGUID then
-          local n = GetUnitName and GetUnitName(unit)
-          if n then candidate = n; break; end
+  -- 1) GUID based resolution through unit tokens
+  if type(destGUID) == "string" and UnitGUID then
+    local numRaid = (GetNumRaidMembers and GetNumRaidMembers()) or 0
+    if numRaid > 0 then
+      for i = 1, numRaid do
+        if UnitGUID("raid" .. i) == destGUID then
+          local n = GetUnitName and GetUnitName("raid" .. i, true)
+          return StripCombatName(n) or n
         end
       end
+    else
+      local numParty = (GetNumPartyMembers and GetNumPartyMembers()) or 0
+      for i = 1, numParty do
+        if UnitGUID("party" .. i) == destGUID then
+          local n = GetUnitName and GetUnitName("party" .. i, true)
+          return StripCombatName(n) or n
+        end
+      end
+      if UnitGUID("player") == destGUID then
+        local n = GetUnitName and GetUnitName("player")
+        return StripCombatName(n) or n
+      end
     end
   end
-  if not candidate or candidate == "" then return nil; end
-  return candidate
+
+  -- 2) plain name fallback
+  local candidate = StripCombatName(destName)
+  if candidate then return candidate; end
+
+  return nil
+end
+
+-- Normalizes a player name to the exact capitalization stored in the guild roster
+-- (the DKP tables are keyed by that exact string). Falls back to the input name.
+local function NormalizePlayerName(name)
+  if not name then return nil; end
+  if QDKP2rankIndex and QDKP2rankIndex[name] then return name; end
+  local upper = string.upper(name)
+  for k, _ in pairs(QDKP2name or {}) do
+    if string.upper(k) == upper then return k; end
+  end
+  return name
 end
 
 
@@ -241,21 +275,26 @@ function QDKP2IU_GetRaidCounts()
 end
 
 
------------------------------------ MAIN HANDLER -----------------------------------
+------------------------------------ MAIN HANDLER ------------------------------------
 
--- Registers ONE application of a tracked aura on player <name>.
--- Counts the application ONLY IF:
---   * the aura ID is one of the tracked ones (default 53908 / 53909)
---   * the affected character is a guild member
---   * the character is currently present in the raid/party
+local lastRawEntry = nil   -- anti-duplication guard (see QDKP2IU_ProcessEntry)
+
+--[[ Registers ONE application of a tracked aura on player <name>.
+     Counts the application ONLY IF:
+       * the aura ID is one of the tracked ones (default 53908 / 53909)
+       * the affected character belongs to the guild roster, OR is currently
+         present in the raid/party (this also covers external/standby members) ]]
 function QDKP2IU_RegisterApplication(name, auraID)
   if not name or type(name) ~= "string" then return; end
   auraID = tonumber(auraID)
   if not auraID or not IsTrackedID(auraID) then return; end
 
-  if not QDKP2_IsInGuild(name) then return; end
-  if not QDKP2_IsInRaid(name) then
-    QDKP2_Debug(3, "Core", "ItemUsage: " .. name .. " received a tracked aura but is not in the raid. Not counted.")
+  name = NormalizePlayerName(name)
+
+  local inGuild = QDKP2_IsInGuild and QDKP2_IsInGuild(name)
+  local inRaid = QDKP2_IsInRaid and QDKP2_IsInRaid(name)
+  if not inGuild and not inRaid then
+    QDKP2_Debug(3, "Core", "ItemUsage: " .. name .. " received a tracked aura but is neither in the guild nor in the raid. Not counted.")
     return
   end
 
@@ -263,6 +302,13 @@ function QDKP2IU_RegisterApplication(name, auraID)
 
   local rec = QDKP2_Data.ItemUses[name]
   if not rec then
+    -- Re-assert the DB reference: on some client flavors the saved-variable table
+    -- gets swapped after the addon opened (e.g. /reload, multi-guild profiles),
+    -- and a stale local reference would silently drop the counter.
+    if not QDKP2_Data or not QDKP2_Data.ItemUses then
+      QDKP2_Data = QDKP2_Data  -- refresh global binding
+      QDKP2IU_Init(true)
+    end
     QDKP2_Data.ItemUses[name] = {}
     rec = QDKP2_Data.ItemUses[name]
   end
@@ -289,23 +335,91 @@ QDKP2IU_RegisterUse = QDKP2IU_RegisterApplication
 
 ------------------------------ COMBAT LOG EVENT HANDLER ------------------------------
 
---[[ Called from Core/Events.lua on every COMBAT_LOG_EVENT_UNFILTERED.
-     Watches for SPELL_AURA_APPLIED / SPELL_AURA_REFRESH of the tracked auras
-     landing on a friendly raid/party member, and counts each application.
-     SPELL_AURA_REFRESH is handled too because consumable buff items often get
-     re-applied while the previous buff is still active: the game delivers it
-     as a refresh event, but it is still a NEW use of the item. ]]
-function QDKP2IU_OnCombatLog(subevent, ...)
-  if subevent ~= "SPELL_AURA_APPLIED" and subevent ~= "SPELL_AURA_REFRESH" then return; end
-  -- after subevent: srcGUID, srcName, srcFlags, dstGUID, dstName, dstFlags, spellID, ...
-  local srcGUID, srcName, srcFlags, dstGUID, dstName, dstFlags, spellID = ...
-  if not spellID then return; end
-  if not IsTrackedID(spellID) then return; end
+--[[ Extracts (subevent, srcGUID, srcName, dstGUID, dstName, spellID) from ONE
+     combat log entry, in a client-version-safe way:
+       - WoW 10.x+ Retail/Classic : CombatLogGetCurrentEventInfo() returns the current entry
+       - WoW 4.x-9.x              : UnitEvents("COMBAT_LOG_EVENT_UNFILTERED", idx) ring buffer
+       - WoW <=3.3 (legacy)       : fields forwarded as event args (arg2..arg9) ]]
+local function ReadCombatLogEntry(idx)
+  local timestamp, subevent, srcGUID, srcName, srcFlags, srcRobust,
+        dstGUID, dstName, dstFlags, dstRobust, spellID
+  if CombatLogGetCurrentEventInfo then
+    timestamp, subevent, srcGUID, srcName, srcFlags, srcRobust,
+            dstGUID, dstName, dstFlags, dstRobust, spellID = CombatLogGetCurrentEventInfo()
+  elseif UnitEvents then
+    timestamp, subevent, srcGUID, srcName, srcFlags, srcRobust,
+            dstGUID, dstName, dstFlags, dstRobust, spellID =
+      select(2, UnitEvents("COMBAT_LOG_EVENT_UNFILTERED", idx or 1))
+  else
+    local f = QDKP2IU_EventFrame
+    if not f then return end
+    subevent = f.arg2; srcGUID = f.arg3; srcName = f.arg4
+    dstGUID  = f.arg5; dstName  = f.arg6; spellID = f.arg9
+  end
+  return subevent, srcGUID, srcName, dstGUID, dstName, spellID
+end
 
+function QDKP2IU_ProcessEntry(subevent, dstGUID, dstName, spellID)
+  if not subevent then return; end
+  if subevent ~= "SPELL_AURA_APPLIED" and subevent ~= "SPELL_AURA_REFRESH" then return; end
+  if not spellID or not IsTrackedID(spellID) then return; end
+  -- Anti-duplication: the same log entry can reach us through more than one
+  -- listener (core Events frame + module hidden frame). Identify the raw entry
+  -- and skip it if we have already processed this exact one.
+  local entryKey = tostring(dstGUID) .. "|" .. tostring(dstName) .. "|" .. tostring(spellID)
+  if entryKey == lastRawEntry then return; end
+  lastRawEntry = entryKey
+  -- dest must resolve to a player name
   local name = UnitNameFromCombatLog(dstName, dstGUID)
   if not name then return; end
-
   QDKP2IU_RegisterApplication(name, spellID)
+end
+
+--[[ Processes the currently available combat log entries.
+     On WoW 4.x-9.x clients it drains the WHOLE ring buffer (NUM_COMBAT_LOGS), so no
+     aura application can be missed even if another addon consumed the event first.
+     On modern and legacy clients there is only one entry per event: use the args
+     passed with the event when present, otherwise re-read them from the API.
+     NOTE: on modern clients the forwarded arg2 IS the subevent string; on legacy
+     (<=3.3) dispatchers arg2 may instead be the source GUID, in which case we
+     re-read the entry fields from the frame's forwarded args. ]]
+function QDKP2IU_OnCombatLog(subevent, srcGUID, srcName, dstGUID, dstName, spellID)
+  if not QDKP2_Data or not QDKP2_Data.TrackedItems then return; end
+
+  local num = NUM_COMBAT_LOGS   -- defined only on WoW 4.x-9.x ring-buffer clients
+  if num and num > 0 and UnitEvents and not CombatLogGetCurrentEventInfo then
+    for i = 1, num do
+      local s, sg, sn, dg, dn, sp = ReadCombatLogEntry(i)
+      QDKP2IU_ProcessEntry(s, dg, dn, sp)
+    end
+  else
+    if type(subevent) ~= "string" or not string.find(subevent, "^SPELL_") and not string.find(subevent, "^UNIT_") then
+      -- not a recognizable subevent (legacy arg layout): re-read from the API/args
+      subevent, srcGUID, srcName, dstGUID, dstName, spellID = ReadCombatLogEntry(1)
+    elseif CombatLogGetCurrentEventInfo and not UnitEvents and not NUM_COMBAT_LOGS then
+      -- Modern client: the authoritative data is CombatLogGetCurrentEventInfo();
+      -- always take the full field set from there (spellID sits at position 10).
+      local s2, sg2, sn2, dg2, dn2, sp2 = ReadCombatLogEntry(1)
+      if s2 then subevent, srcGUID, srcName, dstGUID, dstName, spellID = s2, sg2, sn2, dg2, dn2, sp2 end
+    end
+    QDKP2IU_ProcessEntry(subevent, dstGUID, dstName, spellID)
+  end
+end
+
+-- Dedicated hidden frame listening to COMBAT_LOG_EVENT_UNFILTERED.
+-- It is created as soon as this file loads, so it works even before the guild
+-- database finished initializing (the handler itself checks for readiness).
+if not QDKP2IU_EventFrame then
+  QDKP2IU_EventFrame = CreateFrame("Frame", "QDKP2IU_EventFrame")
+  QDKP2IU_EventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+  QDKP2IU_EventFrame:SetScript("OnEvent", function(self, event, ...)
+    if event ~= "COMBAT_LOG_EVENT_UNFILTERED" then return; end
+    -- Pass the varargs straight through: legacy (<=3.3) clients forward the log
+    -- fields as event args, modern clients pass nothing and the handler re-reads
+    -- the entry via CombatLogGetCurrentEventInfo instead.
+    local ok, err = pcall(QDKP2IU_OnCombatLog, ...)
+    if not ok and QDKP2_Debug then QDKP2_Debug(1, "Core", "ItemUsage combatlog error: " .. tostring(err)) end
+  end)
 end
 
 

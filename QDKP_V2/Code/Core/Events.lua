@@ -64,8 +64,12 @@ function QDKP2_OnEvent(self, event, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
         QDKP2_BossKilled(boss)
       end
     elseif arg2=="SPELL_AURA_APPLIED" or arg2=="SPELL_AURA_REFRESH" then   --ItemUsage module: tracked auras (53908/53909) applications
+      -- Legacy-style forwarded args only exist on <=3.3 clients; on modern ones
+      -- the ItemUsage hidden frame re-reads the entry itself, so we simply hand
+      -- over whatever this dispatcher received (varargs pass-through).
       if QDKP2IU_OnCombatLog then
-        QDKP2IU_OnCombatLog(arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+        local ok, err = pcall(QDKP2IU_OnCombatLog, arg2, arg3, arg4, arg5, arg6, arg9)
+        if not ok then QDKP2_Debug(1,"Core","ItemUsage combatlog error: "..tostring(err)) end
       end
     end
     return
