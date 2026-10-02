@@ -1,0 +1,11 @@
+## Interface: 30300
+## Title: Quick DKP V2 - Potion Counter
+## Author: Lollipopolinius | Warmane | Icecrown
+## Version: 0.0.1
+## Notes: Count haste and crit potions in raid
+## DefaultState: Enabled
+## LoadOnDemand: 0
+## Dependencies: QDKP_V2
+## SavedVariablesPerCharacter: 
+
+
