@@ -353,14 +353,25 @@ end
 -----------------------
 --   GUI window
 -----------------------
-local FRAME_W, FRAME_H = 420, 460
+local FRAME_W, FRAME_H = 750, 560
 
 local function CreateMainWindow()
   if PotCounter.frame then return PotCounter.frame end
 
+  -- Anchor to the bottom-left corner of the QDKP main window (top-right
+  -- corner of our window). Falls back to screen center if QDKP is absent.
+  local qdkpMain
+  for _, nm in ipairs({ "QDKP2frame1", "QDKP2_Frame1", "QDKP2MainFrame" }) do
+    if _G[nm] then qdkpMain = _G[nm]; break end
+  end
+
   local f = CreateFrame("Frame", "PotCounterWindow", UIParent)
   f:SetSize(FRAME_W, FRAME_H)
-  f:SetPoint("CENTER")
+  if qdkpMain then
+    f:SetPoint("TOPRIGHT", qdkpMain, "BOTTOMLEFT", 0, 0)
+  else
+    f:SetPoint("CENTER")
+  end
   f:SetMovable(true)
   f:EnableMouse(true)
   f:RegisterForDrag("LeftButton")
