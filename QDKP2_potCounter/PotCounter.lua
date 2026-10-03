@@ -400,7 +400,7 @@ local function CreateMainWindow()
   local xoff = 0
   for i, col in ipairs(colNames) do
     local hs = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    hs:SetPoint("LEFT", 20 + xoff, headerY)
+    hs:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 20 + xoff, headerY)
     hs:SetText(col[1])
     xoff = xoff + col[2]
   end
@@ -707,7 +707,7 @@ local function AddToQDKPMainWindow()
 
   local btn = CreateFrame("Button", "QDKP2frame1_potc", anchor:GetParent(), "UIPanelButtonTemplate")
   btn:SetSize(85, 25)
-  btn:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 6, 0)
+  btn:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, 3)
   btn:SetText((GetLocale and GetLocale() == "ruRU") and POTC_BTN_TEXT_RU or "Potions")
   btn:SetScript("OnClick", function()
     if PotCounter.frame then PotCounter.frame:Toggle() end
