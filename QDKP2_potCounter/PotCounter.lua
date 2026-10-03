@@ -71,8 +71,8 @@ local function UnitNameByKey(unit)
 end
 
 local function ResolvePlayer(destGUID, destName)
-  -- Prefer resolving through the raid roster by GUID (robust against
-  -- server-side name formatting), fall back to normalized combat log name.
+  -- Only track players that are currently in the raid.
+  -- Returns nil if the target is not a raid member (filters out outsiders).
   if destGUID then
     local num = (GetNumGroupMembers and GetNumGroupMembers()) or (GetNumRaidMembers and GetNumRaidMembers()) or 0
     for i = 1, num do
@@ -83,7 +83,22 @@ local function ResolvePlayer(destGUID, destName)
       end
     end
   end
-  return NormalizeName(destName)
+  -- Fallback: try matching by name among current raid members
+  local norm = NormalizeName(destName)
+  if norm then
+    local num = (GetNumGroupMembers and GetNumGroupMembers()) or (GetNumRaidMembers and GetNumRaidMembers()) or 0
+    for i = 1, num do
+      local unit = "raid" .. i
+      if UnitExists(unit) then
+        local un = UnitName(unit)
+        if un and NormalizeName(un) == norm then
+          return norm
+        end
+      end
+    end
+  end
+  -- Not found in raid roster — return nil to skip this event
+  return nil
 end
 
 local function GetPlayerEntry(key, createIfMissing)
